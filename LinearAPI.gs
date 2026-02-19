@@ -41,7 +41,7 @@ function fetchTeams(apiKey) {
 
 function fetchProjects(apiKey, teamId) {
   var query =
-    'query($teamId: String!) {' +
+    'query($teamId: ID!) {' +
     '  team(id: $teamId) {' +
     '    projects { nodes { id name state } }' +
     '  }' +
@@ -72,8 +72,8 @@ function fetchIssuesForProject(apiKey, teamId, projectId) {
     }
 
     var query =
-      'query($teamId: String!, $first: Int!, $after: String' +
-      (projectId ? ', $projectId: String!' : '') +
+      'query($teamId: ID!, $first: Int!, $after: String' +
+      (projectId ? ', $projectId: ID!' : '') +
       ') {' +
       '  team(id: $teamId) {' +
       '    issues(first: $first, after: $after' +
@@ -139,7 +139,7 @@ function fetchSingleIssueHistory_(apiKey, issueId) {
     if (cursor) variables.after = cursor;
 
     var query =
-      'query($issueId: String!, $first: Int!, $after: String) {' +
+      'query($issueId: ID!, $first: Int!, $after: String) {' +
       '  issue(id: $issueId) {' +
       '    history(first: $first, after: $after) {' +
       '      pageInfo { hasNextPage endCursor }' +

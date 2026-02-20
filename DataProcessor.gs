@@ -62,7 +62,7 @@ function computeTimeByStatus_(issue) {
     }
 
     var end = new Date(entry.createdAt);
-    var hours = (end - start) / (1000 * 60 * 60);
+    var hours = Math.max(0, (end - start) / (1000 * 60 * 60));
 
     if (!result[statusName]) result[statusName] = 0;
     result[statusName] += hours;
@@ -78,7 +78,7 @@ function computeTimeByStatus_(issue) {
     ? new Date(issue.canceledAt)
     : new Date();
 
-  var hoursInCurrent = (until - sinceLastTransition) / (1000 * 60 * 60);
+  var hoursInCurrent = Math.max(0, (until - sinceLastTransition) / (1000 * 60 * 60));
   if (!result[currentStatus]) result[currentStatus] = 0;
   result[currentStatus] += hoursInCurrent;
 
@@ -184,14 +184,7 @@ function writeIssuesToSheet(ss, processed) {
     .getRange(1, 1, allData.length, allData[0].length)
     .setValues(allData);
 
-  // Format header
-  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
-  sheet.setFrozenRows(1);
-
-  // Auto-resize key columns
-  for (var c = 1; c <= Math.min(headers.length, 16); c++) {
-    sheet.autoResizeColumn(c);
-  }
+  formatAsTable_(sheet, allData.length, headers.length);
 }
 
 /**
@@ -255,10 +248,14 @@ function writeWeeklyVelocity(ss, processed) {
   sheet
     .getRange(1, 1, allData.length, allData[0].length)
     .setValues(allData);
-  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
-  sheet.setFrozenRows(1);
-  for (var c = 1; c <= headers.length; c++) {
-    sheet.autoResizeColumn(c);
+
+  formatAsTable_(sheet, allData.length, headers.length);
+
+  // Number formatting for numeric columns
+  if (rows.length) {
+    sheet.getRange(2, 2, rows.length, 1).setNumberFormat('#,##0');   // Points
+    sheet.getRange(2, 3, rows.length, 1).setNumberFormat('#,##0');   // Tickets
+    sheet.getRange(2, 4, rows.length, 1).setNumberFormat('0.0');     // Avg Cycle Time
   }
 }
 
@@ -297,9 +294,58 @@ function writeStatusBreakdown(ss, processed) {
   sheet
     .getRange(1, 1, allData.length, allData[0].length)
     .setValues(allData);
-  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+
+  formatAsTable_(sheet, allData.length, headers.length);
+
+  // Number formatting for numeric columns
+  if (rows.length) {
+    sheet.getRange(2, 2, rows.length, 1).setNumberFormat('0.0');  // Avg Hours
+    sheet.getRange(2, 3, rows.length, 1).setNumberFormat('0.0');  // Median Hours
+    sheet.getRange(2, 4, rows.length, 1).setNumberFormat('#,##0.0'); // Total Hours
+    sheet.getRange(2, 5, rows.length, 1).setNumberFormat('#,##0');   // Issue Count
+  }
+}
+
+// --------------- Table formatting ---------------
+
+/**
+ * Formats a sheet range as a styled Google Sheet table:
+ * - Bold white header on dark background
+ * - Alternating row colors
+ * - Thin borders around all cells
+ * - Frozen header row
+ * - Auto-resized columns
+ */
+function formatAsTable_(sheet, numRows, numCols) {
+  var headerRange = sheet.getRange(1, 1, 1, numCols);
+  headerRange.setFontWeight('bold');
+  headerRange.setFontColor('#ffffff');
+  headerRange.setBackground('#5e6ad2');
+  headerRange.setHorizontalAlignment('center');
+
   sheet.setFrozenRows(1);
-  for (var c = 1; c <= headers.length; c++) {
+
+  // Alternating row colors
+  if (numRows > 1) {
+    for (var r = 2; r <= numRows; r++) {
+      var rowRange = sheet.getRange(r, 1, 1, numCols);
+      if (r % 2 === 0) {
+        rowRange.setBackground('#f3f4f6');
+      } else {
+        rowRange.setBackground('#ffffff');
+      }
+    }
+  }
+
+  // Borders around the full table
+  var tableRange = sheet.getRange(1, 1, numRows, numCols);
+  tableRange.setBorder(
+    true, true, true, true, true, true,
+    '#d1d5db', SpreadsheetApp.BorderStyle.SOLID
+  );
+
+  // Auto-resize columns (cap at 20 to avoid slow resizing on wide sheets)
+  for (var c = 1; c <= Math.min(numCols, 20); c++) {
     sheet.autoResizeColumn(c);
   }
 }

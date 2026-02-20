@@ -22,6 +22,10 @@ function onOpen() {
     .addSeparator()
     .addItem('Enable Auto-Refresh (hourly)', 'enableAutoRefresh')
     .addItem('Disable Auto-Refresh', 'disableAutoRefresh')
+    .addSeparator()
+    .addItem('Select Statuses for Breakdown', 'showStatusPicker')
+    .addSeparator()
+    .addItem('Set Date Range Filter', 'showDateRangeDialog')
     .addToUi();
 }
 
@@ -82,9 +86,9 @@ function showApiKeyDialog() {
 function getApiKey_() {
   var key = getSetting_('linearApiKey');
   if (!key) {
-    throw new Error(
-      'No Linear API key found. Use VelocityMAX > Set API Key first.'
-    );
+    var msg = 'No Linear API key found. Use VelocityMAX > Set API Key first.';
+    logError_('getApiKey_', msg, 'N/A'); // No stack trace for this simple check
+    throw new Error(msg);
   }
   return key;
 }
@@ -111,6 +115,8 @@ function onTeamSelected(teamId, teamName) {
   // clear project selection when team changes
   saveSetting_('projectId', '');
   saveSetting_('projectName', '');
+  // clear status selection when team changes
+  saveSetting_('filteredStatuses', '');
 }
 
 // --------------- Project picker ---------------
@@ -139,23 +145,84 @@ function onProjectSelected(projectIds, projectNames) {
   saveSetting_('projectName', JSON.stringify(projectNames));
 }
 
+// --------------- Status picker ---------------
+
+function showStatusPicker() {
+  var apiKey = getApiKey_();
+  var teamId = getSetting_('teamId');
+  if (!teamId) {
+    SpreadsheetApp.getUi().alert('Please select a team first.');
+    return;
+  }
+  var allStatuses = fetchAllStatuses(apiKey, teamId);
+
+  if (!allStatuses.length) {
+    SpreadsheetApp.getUi().alert('No statuses found for this team.');
+    return;
+  }
+
+  var html = HtmlService.createHtmlOutput(buildPickerHtml_('status', allStatuses))
+    .setWidth(400)
+    .setHeight(300);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Select Statuses for Breakdown');
+}
+
+function onStatusesSelected(statusNames) {
+  saveSetting_('filteredStatuses', JSON.stringify(statusNames));
+}
+
+// --------------- Date Range Picker ---------------
+
+function showDateRangeDialog() {
+  var ui = SpreadsheetApp.getUi();
+  var startDate = getSetting_('startDate') || '';
+  var endDate = getSetting_('endDate') || '';
+
+  var htmlOutput = HtmlService.createHtmlOutput(
+    '<p>Enter Start and End Dates (YYYY-MM-DD):</p>' +
+    '<input type="date" id="startDate" value="' + startDate + '"><br><br>' +
+    '<input type="date" id="endDate" value="' + endDate + '"><br><br>' +
+    '<button onclick="google.script.run.withSuccessHandler(google.script.host.close).onDateRangeSelected(document.getElementById(\'startDate\').value, document.getElementById(\'endDate\').value)">Save</button>'
+  )
+  .setWidth(300)
+  .setHeight(200);
+
+  ui.showModalDialog(htmlOutput, 'Set Date Range Filter');
+}
+
+function onDateRangeSelected(startDate, endDate) {
+  saveSetting_('startDate', startDate);
+  saveSetting_('endDate', endDate);
+}
+
 // --------------- Shared picker HTML builder ---------------
 
 function buildPickerHtml_(type, items) {
   var isProjectPicker = type === 'project';
-  var teamId = getSetting_('teamId');
-  var selectedProjectsJson = isProjectPicker ? getSetting_('projectId') : null; // projectId is actually selectedProjectsJson
-  var selectedProjects = selectedProjectsJson ? JSON.parse(selectedProjectsJson) : [];
+  var isStatusPicker = type === 'status';
+
+  var selectedItemsJson = null;
+  if (isProjectPicker) {
+    selectedItemsJson = getSetting_('projectId');
+  } else if (isStatusPicker) {
+    selectedItemsJson = getSetting_('filteredStatuses');
+  }
+  var selectedItems = selectedItemsJson ? JSON.parse(selectedItemsJson) : [];
 
   var rows = items
     .map(function (item) {
       var escapedName = item.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-      var isChecked = selectedProjects.some(function(p) { return p.id === item.id; }) ? 'checked' : '';
+      var isChecked = selectedItems.some(function(p) { return p === item.name; }) ? 'checked' : ''; // For statuses, item.id is actually item.name
+
+      // For project picker, we pass id and name. For status picker, we only have name (which acts as id)
+      var valueAttribute = isProjectPicker ? 'value="' + item.id + '"' : 'value="' + escapedName + '"';
+      var dataNameAttribute = isProjectPicker ? 'data-name="' + escapedName + '"' : '';
+
       return (
         '<tr>' +
         '<td style="padding:6px 12px;width:30px;">' +
-        (isProjectPicker ?
-          '<input type="checkbox" class="project-checkbox" ' + isChecked + ' value="' + item.id + '" data-name="' + escapedName + '">' :
+        (isProjectPicker || isStatusPicker ?
+          '<input type="checkbox" class="' + type + '-checkbox" ' + isChecked + ' ' + valueAttribute + ' ' + dataNameAttribute + '>' :
           '<button onclick="pick(\'' + item.id + "','" + escapedName + '\')" ' +
           'style="cursor:pointer;padding:6px 16px;border:1px solid #5e6ad2;' +
           'background:#5e6ad2;color:#fff;border-radius:4px;">Select</button>') +
@@ -168,10 +235,27 @@ function buildPickerHtml_(type, items) {
     })
     .join('');
 
-  var callbackFn = type === 'team' ? 'onTeamSelected' : 'onProjectSelected';
+  var callbackFn;
+  if (isProjectPicker) {
+    callbackFn = 'onProjectSelected';
+  } else if (isStatusPicker) {
+    callbackFn = 'onStatusesSelected';
+  } else {
+    callbackFn = 'onTeamSelected';
+  }
 
-  var header = isProjectPicker ?
-    '<h2>Select Projects</h2>' +
+  var headerText = '';
+  var checkboxClass = '';
+  if (isProjectPicker) {
+    headerText = '<h2>Select Projects</h2>';
+    checkboxClass = 'project-checkbox';
+  } else if (isStatusPicker) {
+    headerText = '<h2>Select Statuses for Breakdown</h2>';
+    checkboxClass = 'status-checkbox';
+  }
+
+  var header = (isProjectPicker || isStatusPicker) ?
+    headerText +
     '<div style="margin-bottom: 10px;">' +
     '<button onclick="selectAll()" style="margin-right: 10px;cursor:pointer;padding:6px 16px;border:1px solid #5e6ad2;' +
     'background:#5e6ad2;color:#fff;border-radius:4px;">Select All</button>' +
@@ -181,16 +265,16 @@ function buildPickerHtml_(type, items) {
     'background:#28a745;color:#fff;border-radius:4px;">Save Selection</button>' +
     '</div>' : '';
 
-  var script = isProjectPicker ?
+  var script = (isProjectPicker || isStatusPicker) ?
     '<script>' +
-    'function selectAll() { Array.from(document.querySelectorAll(".project-checkbox")).forEach(cb => cb.checked = true); }' +
-    'function deselectAll() { Array.from(document.querySelectorAll(".project-checkbox")).forEach(cb => cb.checked = false); }' +
+    'function selectAll() { Array.from(document.querySelectorAll(".' + checkboxClass + '")).forEach(cb => cb.checked = true); }' +
+    'function deselectAll() { Array.from(document.querySelectorAll(".' + checkboxClass + '")).forEach(cb => cb.checked = false); }' +
     'function saveSelection() {' +
     'var selectedIds = [];' +
     'var selectedNames = [];' +
-    'Array.from(document.querySelectorAll(".project-checkbox:checked")).forEach(function(cb){' +
+    'Array.from(document.querySelectorAll(".' + checkboxClass + ':checked")).forEach(function(cb){' +
     'selectedIds.push(cb.value);' +
-    'selectedNames.push(cb.dataset.name);' +
+    'if (cb.dataset.name) selectedNames.push(cb.dataset.name); else selectedNames.push(cb.value);' + // For statuses, value is name
     '});' +
     'google.script.run.withSuccessHandler(function(){google.script.host.close();}).' +
     callbackFn +
@@ -219,59 +303,70 @@ function buildPickerHtml_(type, items) {
 // --------------- Import / Refresh ---------------
 
 function importIssues() {
-  var apiKey = getApiKey_();
-  var teamId = getSetting_('teamId');
-  var projectIdsJson = getSetting_('projectId');
-  var projectIds = projectIdsJson ? JSON.parse(projectIdsJson) : [];
-
-  if (!teamId) {
-    SpreadsheetApp.getUi().alert(
-      'Please select a team first (VelocityMAX > Select Team).'
-    );
-    return;
-  }
-  if (!projectIds || projectIds.length === 0) {
-    SpreadsheetApp.getUi().alert(
-      'Please select at least one project first (VelocityMAX > Select Project).'
-    );
-    return;
-  }
-
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ui = SpreadsheetApp.getUi();
+  try {
+    var apiKey = getApiKey_();
+    var teamId = getSetting_('teamId');
+    var projectIdsJson = getSetting_('projectId');
+    var projectIds = projectIdsJson ? JSON.parse(projectIdsJson) : [];
+    var startDate = getSetting_('startDate');
+    var endDate = getSetting_('endDate');
 
-  ui.alert(
-    'Import started',
-    'Fetching issues from Linear… This may take a moment.',
-    ui.ButtonSet.OK
-  );
+    if (!teamId) {
+      ui.alert(
+        'Please select a team first (VelocityMAX > Select Team).'
+      );
+      return;
+    }
+    if (!projectIds || projectIds.length === 0) {
+      ui.alert(
+        'Please select at least one project first (VelocityMAX > Select Project).'
+      );
+      return;
+    }
 
-  // 1. Fetch raw issues
-  var issues = fetchIssuesForProject(apiKey, teamId, projectIds);
-  if (!issues.length) {
-    ui.alert('No issues found for the selected team/project(s).');
-    return;
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    ui.alert(
+      'Import started',
+      'Fetching issues from Linear… This may take a moment.',
+      ui.ButtonSet.OK
+    );
+
+    // 1. Fetch raw issues
+    var issues = fetchIssuesForProject(apiKey, teamId, projectIds, startDate, endDate);
+    if (!issues.length) {
+      ui.alert('No issues found for the selected team/project(s) in the specified date range.');
+      return;
+    }
+
+    // 2. Fetch status history for every issue
+    var issuesWithHistory = fetchStatusHistories(apiKey, issues);
+
+    // 3. Compute metrics
+    var processed = processIssues(issuesWithHistory);
+
+    // 4. Write to sheets
+    writeIssuesToSheet(ss, processed);
+    writeWeeklyVelocity(ss, processed);
+    writeStatusBreakdown(ss, processed);
+
+    // 5. Compute and Write Burnup/Burndown data
+    var burnupBurndownData = computeBurnupBurndownData_(processed);
+    writeBurnupBurndownDataToSheet(ss, burnupBurndownData);
+
+    // 6. Auto-build Dashboard with all charts
+    buildAllCharts();
+
+    ui.alert(
+      'Done! ' +
+        processed.length +
+        ' issues imported and Dashboard updated.'
+    );
+  } catch (e) {
+    logError_('importIssues', e.message, e.stack);
+    ui.alert('Error during import', 'An error occurred during data import. Please check the _ErrorLog sheet for details: ' + e.message, ui.ButtonSet.OK);
   }
-
-  // 2. Fetch status history for every issue
-  var issuesWithHistory = fetchStatusHistories(apiKey, issues);
-
-  // 3. Compute metrics
-  var processed = processIssues(issuesWithHistory);
-
-  // 4. Write to sheets
-  writeIssuesToSheet(ss, processed);
-  writeWeeklyVelocity(ss, processed);
-  writeStatusBreakdown(ss, processed);
-
-  // 5. Auto-build Dashboard with all charts
-  buildAllCharts();
-
-  ui.alert(
-    'Done! ' +
-      processed.length +
-      ' issues imported and Dashboard updated.'
-  );
 }
 
 function refreshAllData() {
@@ -315,26 +410,39 @@ function disableAutoRefresh() {
  * Runs without UI prompts so it works unattended.
  */
 function autoRefresh_() {
-  var apiKey = getSetting_('linearApiKey');
-  var teamId = getSetting_('teamId');
-  if (!apiKey || !teamId) return; // nothing configured yet
+  try {
+    var apiKey = getSetting_('linearApiKey');
+    var teamId = getSetting_('teamId');
+    if (!apiKey || !teamId) return; // nothing configured yet
 
-  var projectIdsJson = getSetting_('projectId');
-  var projectIds = projectIdsJson ? JSON.parse(projectIdsJson) : [];
-  if (!projectIds || projectIds.length === 0) return; // no projects selected
+    var projectIdsJson = getSetting_('projectId');
+    var projectIds = projectIdsJson ? JSON.parse(projectIdsJson) : [];
+    if (!projectIds || projectIds.length === 0) return; // no projects selected
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var startDate = getSetting_('startDate');
+    var endDate = getSetting_('endDate');
 
-  var issues = fetchIssuesForProject(apiKey, teamId, projectIds);
-  if (!issues.length) return;
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  var issuesWithHistory = fetchStatusHistories(apiKey, issues);
-  var processed = processIssues(issuesWithHistory);
+    var issues = fetchIssuesForProject(apiKey, teamId, projectIds, startDate, endDate);
+    if (!issues.length) return;
 
-  writeIssuesToSheet(ss, processed);
-  writeWeeklyVelocity(ss, processed);
-  writeStatusBreakdown(ss, processed);
-  buildAllCharts();
+    var issuesWithHistory = fetchStatusHistories(apiKey, issues);
+    var processed = processIssues(issuesWithHistory);
+
+    writeIssuesToSheet(ss, processed);
+    writeWeeklyVelocity(ss, processed);
+    writeStatusBreakdown(ss, processed);
+
+    // Compute and Write Burnup/Burndown data
+    var burnupBurndownData = computeBurnupBurndownData_(processed);
+    writeBurnupBurndownDataToSheet(ss, burnupBurndownData);
+
+    buildAllCharts();
+  } catch (e) {
+    logError_('autoRefresh_', e.message, e.stack);
+    // Silent failure for auto-refresh, as it runs unattended
+  }
 }
 
 function removeAutoRefreshTriggers_() {
@@ -347,4 +455,21 @@ function removeAutoRefreshTriggers_() {
     }
   });
   return removed;
+}
+
+// --------------- Error Logging ---------------
+
+/**
+ * Logs an error message to a hidden _ErrorLog sheet.
+ */
+function logError_(functionName, errorMessage, stack) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetName = '_ErrorLog';
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.hideSheet();
+    sheet.appendRow(['Timestamp', 'Function', 'Error Message', 'Stack Trace']);
+  }
+  sheet.appendRow([new Date(), functionName, errorMessage, stack]);
 }

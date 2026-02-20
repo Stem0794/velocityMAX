@@ -18,15 +18,23 @@ function linearQuery_(apiKey, query, variables) {
     muteHttpExceptions: true,
   };
 
-  var response = UrlFetchApp.fetch(LINEAR_API_URL, options);
-  var json = JSON.parse(response.getContentText());
+  try {
+    var response = UrlFetchApp.fetch(LINEAR_API_URL, options);
+    var json = JSON.parse(response.getContentText());
 
-  if (json.errors) {
-    throw new Error(
-      'Linear API error: ' + json.errors.map(function (e) { return e.message; }).join(', ')
-    );
+    if (json.errors) {
+      var errorMsg = 'Linear API error: ' + json.errors.map(function (e) { return e.message; }).join(', ');
+      logError_('linearQuery_', errorMsg, JSON.stringify(json.errors));
+      throw new Error(errorMsg);
+    }
+    return json.data;
+  } catch (e) {
+    if (e.message.includes("API error")) { // Already logged by json.errors check
+      throw e;
+    }
+    logError_('linearQuery_', e.message, e.stack);
+    throw new Error('Network or API communication error: ' + e.message);
   }
-  return json.data;
 }
 
 // --------------- Teams ---------------
@@ -50,13 +58,33 @@ function fetchProjects(apiKey, teamId) {
   return data.team.projects.nodes;
 }
 
+// --------------- Statuses ---------------
+
+function fetchAllStatuses(apiKey, teamId) {
+  var query =
+    'query($teamId: String!) {' +
+    '  workflowStates(filter: { team: { id: { eq: $teamId } } }) {' +
+    '    nodes {' +
+    '      id' +
+    '      name' +
+    '      type' +
+    '    }' +
+    '  }' +
+    '}';
+  var data = linearQuery_(apiKey, query, { teamId: teamId });
+  // BuildPickerHtml_ expects items to have 'name' property, so map them
+  return data.workflowStates.nodes.map(function(status) {
+    return { id: status.id, name: status.name };
+  });
+}
+
 // --------------- Issues ---------------
 
 /**
  * Fetches all issues for a team, optionally filtered by project.
  * Handles pagination via cursor.
  */
-function fetchIssuesForProject(apiKey, teamId, projectIds) {
+function fetchIssuesForProject(apiKey, teamId, projectIds, startDate, endDate) {
   var allIssues = [];
   var hasMore = true;
   var cursor = null;
@@ -65,16 +93,32 @@ function fetchIssuesForProject(apiKey, teamId, projectIds) {
     var variables = { teamId: teamId, first: 100 };
     if (cursor) variables.after = cursor;
 
-    var filterClause = '';
+    var filterClauseParts = [];
     if (projectIds && projectIds.length > 0) {
       variables.projectIds = projectIds;
-      filterClause = ', filter: { project: { id: { in: $projectIds } } }';
+      filterClauseParts.push('project: { id: { in: $projectIds } }');
+    }
+    if (startDate) {
+      variables.startDate = startDate;
+      filterClauseParts.push('createdAt: { gte: $startDate }');
+    }
+    if (endDate) {
+      variables.endDate = endDate;
+      filterClauseParts.push('createdAt: { lte: $endDate }');
     }
 
+    var filterClause = '';
+    if (filterClauseParts.length > 0) {
+      filterClause = ', filter: { ' + filterClauseParts.join(', ') + ' }';
+    }
+
+    var queryVariables = '$teamId: String!, $first: Int!, $after: String';
+    if (projectIds && projectIds.length > 0) queryVariables += ', $projectIds: [ID!]!';
+    if (startDate) queryVariables += ', $startDate: DateTime!';
+    if (endDate) queryVariables += ', $endDate: DateTime!';
+
     var query =
-      'query($teamId: String!, $first: Int!, $after: String' +
-      (projectIds && projectIds.length > 0 ? ', $projectIds: [ID!]!' : '') +
-      ') {' +
+      'query(' + queryVariables + ') {' +
       '  team(id: $teamId) {' +
       '    issues(first: $first, after: $after' +
       filterClause +

@@ -12,11 +12,11 @@ function buildAllCharts() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
   // Ensure data sheets exist
-  var velocitySheet = ss.getSheetByName('Weekly Velocity');
   var issuesSheet = ss.getSheetByName('Issues');
   var statusSheet = ss.getSheetByName('Status Breakdown');
+  var burnupBurndownSheet = ss.getSheetByName('Burnup Burndown Data');
 
-  if (!velocitySheet && !issuesSheet && !statusSheet) {
+  if (!velocitySheet && !issuesSheet && !statusSheet && !burnupBurndownSheet) {
     SpreadsheetApp.getUi().alert(
       'No data sheets found. Import issues first (VelocityMAX > Import Issues).'
     );
@@ -83,6 +83,16 @@ function buildAllCharts() {
   // 4. Status Breakdown (bar)
   if (statusSheet && statusSheet.getLastRow() > 1) {
     chartRow = addStatusBreakdownChart_(dashboard, statusSheet, chartRow);
+  }
+
+  // 5. Burn-up Chart
+  if (burnupBurndownSheet && burnupBurndownSheet.getLastRow() > 1) {
+    chartRow = addBurnupChart_(dashboard, burnupBurndownSheet, chartRow);
+  }
+
+  // 6. Burn-down Chart
+  if (burnupBurndownSheet && burnupBurndownSheet.getLastRow() > 1) {
+    chartRow = addBurndownChart_(dashboard, burnupBurndownSheet, chartRow);
   }
 
   // Move Dashboard to first position
@@ -314,6 +324,97 @@ function addStatusBreakdownChart_(dashboard, srcSheet, startRow) {
     .setOption('series', {
       0: { color: '#5e6ad2', labelInLegend: 'Avg Days' },
       1: { color: '#30a46c', labelInLegend: 'Median Days' },
+    })
+    .setOption('legend', { position: 'top', textStyle: { fontSize: 12 } })
+    .setOption('width', 900)
+    .setOption('height', 400)
+    .build();
+
+  dashboard.insertChart(chart);
+  return startRow + 27;
+}
+
+/**
+ * Burn-up Chart – Shows cumulative work added and completed over time.
+ */
+function addBurnupChart_(dashboard, srcSheet, startRow) {
+  var numRows = srcSheet.getLastRow();
+  if (numRows < 2) return startRow;
+
+  dashboard.getRange('A' + startRow).setValue('Burn-up Chart');
+  dashboard.getRange('A' + startRow).setFontSize(13).setFontWeight('bold');
+
+  dashboard
+    .getRange('A' + (startRow + 1))
+    .setValue(
+      'How to read: The red line shows the total scope (cumulative created points/issues). ' +
+      'The green line shows cumulative completed points/issues. ' +
+      'The goal is for the green line to meet the red line by the end of the project.'
+    );
+  dashboard
+    .getRange('A' + (startRow + 1))
+    .setFontSize(9)
+    .setFontColor('#888888')
+    .setWrap(true);
+
+  var chart = dashboard
+    .newChart()
+    .setChartType(Charts.ChartType.LINE)
+    .addRange(srcSheet.getRange(1, 1, numRows, 1)) // Date
+    .addRange(srcSheet.getRange(1, 2, numRows, 1)) // Cumulative Created
+    .addRange(srcSheet.getRange(1, 3, numRows, 1)) // Cumulative Completed
+    .setPosition(startRow + 2, 1, 0, 0)
+    .setOption('title', 'Burn-up Chart (Points)')
+    .setOption('titleTextStyle', { fontSize: 14, bold: true })
+    .setOption('hAxis', { title: 'Date', textStyle: { fontSize: 11 }, format: 'MMM d' })
+    .setOption('vAxis', { title: 'Points', textStyle: { fontSize: 11 }, minValue: 0 })
+    .setOption('series', {
+      0: { color: '#e5484d', labelInLegend: 'Total Scope' },
+      1: { color: '#30a46c', labelInLegend: 'Cumulative Completed' },
+    })
+    .setOption('legend', { position: 'top', textStyle: { fontSize: 12 } })
+    .setOption('width', 900)
+    .setOption('height', 400)
+    .build();
+
+  dashboard.insertChart(chart);
+  return startRow + 27;
+}
+
+/**
+ * Burn-down Chart – Shows remaining work over time.
+ */
+function addBurndownChart_(dashboard, srcSheet, startRow) {
+  var numRows = srcSheet.getLastRow();
+  if (numRows < 2) return startRow;
+
+  dashboard.getRange('A' + startRow).setValue('Burn-down Chart');
+  dashboard.getRange('A' + startRow).setFontSize(13).setFontWeight('bold');
+
+  dashboard
+    .getRange('A' + (startRow + 1))
+    .setValue(
+      'How to read: The green line shows the remaining work (points/issues) over time. ' +
+      'The goal is for this line to reach zero by the project end date.'
+    );
+  dashboard
+    .getRange('A' + (startRow + 1))
+    .setFontSize(9)
+    .setFontColor('#888888')
+    .setWrap(true);
+
+  var chart = dashboard
+    .newChart()
+    .setChartType(Charts.ChartType.LINE)
+    .addRange(srcSheet.getRange(1, 1, numRows, 1)) // Date
+    .addRange(srcSheet.getRange(1, 5, numRows, 1)) // Remaining
+    .setPosition(startRow + 2, 1, 0, 0)
+    .setOption('title', 'Burn-down Chart (Points Remaining)')
+    .setOption('titleTextStyle', { fontSize: 14, bold: true })
+    .setOption('hAxis', { title: 'Date', textStyle: { fontSize: 11 }, format: 'MMM d' })
+    .setOption('vAxis', { title: 'Points Remaining', textStyle: { fontSize: 11 }, minValue: 0 })
+    .setOption('series', {
+      0: { color: '#30a46c', labelInLegend: 'Points Remaining' },
     })
     .setOption('legend', { position: 'top', textStyle: { fontSize: 12 } })
     .setOption('width', 900)

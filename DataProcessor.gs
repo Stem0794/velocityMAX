@@ -37,6 +37,118 @@ function processIssues(issues) {
   });
 }
 
+// --------------- Burn-up / Burn-down Data ---------------
+
+function computeBurnupBurndownData_(processedIssues) {
+  if (!processedIssues || processedIssues.length === 0) return [];
+
+  // Determine project start and end dates
+  var minDate = new Date();
+  var maxDate = new Date(0); // Epoch
+
+  processedIssues.forEach(function (issue) {
+    if (issue.createdAt) {
+      var createdAt = new Date(issue.createdAt);
+      if (createdAt < minDate) minDate = createdAt;
+    }
+    if (issue.completedAt) {
+      var completedAt = new Date(issue.completedAt);
+      if (completedAt > maxDate) maxDate = completedAt;
+    }
+  });
+
+  // If no completed issues, set maxDate to today
+  if (maxDate.getTime() === new Date(0).getTime()) {
+    maxDate = new Date();
+  }
+
+  // Ensure minDate is not in the future
+  if (minDate > new Date()) {
+    minDate = new Date();
+  }
+
+  // Aggregate data by day
+  var dailyData = {};
+  var runningTotalScope = 0; // Total scope at any given point (cumulative created)
+
+  // Sort issues by creation date to correctly track scope
+  processedIssues.sort(function (a, b) {
+    return new Date(a.createdAt) - new Date(b.createdAt);
+  });
+
+  processedIssues.forEach(function (issue) {
+    var createdAt = new Date(issue.createdAt);
+    var completedAt = issue.completedAt ? new Date(issue.completedAt) : null;
+    var points = issue.points || 0;
+
+    // Initialize daily data up to creation date
+    var currentDate = new Date(minDate);
+    while (currentDate <= createdAt) {
+      var dateStr = Utilities.formatDate(currentDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      if (!dailyData[dateStr]) {
+        dailyData[dateStr] = {
+          date: new Date(currentDate),
+          created: 0,
+          completed: 0,
+          totalScope: 0 // Will be updated later
+        };
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    // Add created points to creation date
+    var createdDateStr = Utilities.formatDate(createdAt, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    if (!dailyData[createdDateStr]) {
+        dailyData[createdDateStr] = {
+          date: new Date(createdAt),
+          created: 0,
+          completed: 0,
+          totalScope: 0
+        };
+      }
+    dailyData[createdDateStr].created += points;
+
+
+    // Add completed points to completion date
+    if (completedAt) {
+      var completedDateStr = Utilities.formatDate(completedAt, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      if (!dailyData[completedDateStr]) {
+        dailyData[completedDateStr] = {
+          date: new Date(completedAt),
+          created: 0,
+          completed: 0,
+          totalScope: 0
+        };
+      }
+      dailyData[completedDateStr].completed += points;
+    }
+  });
+
+  // Fill in missing dates and calculate cumulative values
+  var result = [];
+  var cumulativeCreated = 0;
+  var cumulativeCompleted = 0;
+
+  var currentDate = new Date(minDate);
+  while (currentDate <= maxDate) {
+    var dateStr = Utilities.formatDate(currentDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    var data = dailyData[dateStr] || { date: new Date(currentDate), created: 0, completed: 0 };
+
+    cumulativeCreated += data.created;
+    cumulativeCompleted += data.completed;
+
+    result.push({
+      date: data.date,
+      cumulativeCreated: cumulativeCreated,
+      cumulativeCompleted: cumulativeCompleted,
+      totalScope: cumulativeCreated // Total scope is cumulative created at that point
+    });
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return result;
+}
+
 // --------------- Time-by-status ---------------
 
 /**
@@ -188,6 +300,47 @@ function writeIssuesToSheet(ss, processed) {
 }
 
 /**
+ * Write Burnup/Burndown data to a "Burnup Burndown Data" sheet.
+ */
+function writeBurnupBurndownDataToSheet(ss, burnupBurndownData) {
+  var sheetName = 'Burnup Burndown Data';
+  var sheet = ss.getSheetByName(sheetName);
+  if (sheet) {
+    sheet.clear();
+  } else {
+    sheet = ss.insertSheet(sheetName);
+  }
+
+  if (!burnupBurndownData || burnupBurndownData.length === 0) {
+    sheet.getRange('A1').setValue('No burnup/burndown data found.');
+    return;
+  }
+
+  var headers = ['Date', 'Cumulative Created', 'Cumulative Completed', 'Total Scope', 'Remaining'];
+  var rows = burnupBurndownData.map(function(data) {
+    return [
+      data.date,
+      data.cumulativeCreated,
+      data.cumulativeCompleted,
+      data.totalScope,
+      data.totalScope - data.cumulativeCompleted // Remaining
+    ];
+  });
+
+  var allData = [headers].concat(rows);
+  sheet
+    .getRange(1, 1, allData.length, allData[0].length)
+    .setValues(allData);
+
+  formatAsTable_(sheet, allData.length, headers.length);
+
+  // Number formatting for numeric columns
+  if (rows.length) {
+    sheet.getRange(2, 2, rows.length, 4).setNumberFormat('#,##0');
+  }
+}
+
+/**
  * Write a "Weekly Velocity" sheet with points completed per week.
  */
 function writeWeeklyVelocity(ss, processed) {
@@ -277,27 +430,33 @@ function writeStatusBreakdown(ss, processed) {
     return;
   }
 
-  // Filter for user-specified statuses
-  var allowedStatuses = [
-    'In Progress',
-    'In Review',
-    'Done',
-    'In Dev',
-    'In Staging',
-    // Add other statuses here if needed
-  ];
-  var filteredStatuses = allStatuses.filter(function(status) {
-    return allowedStatuses.includes(status);
+  // Retrieve filtered statuses from settings
+  var filteredStatusesJson = getSetting_('filteredStatuses');
+  var filteredStatuses = filteredStatusesJson ? JSON.parse(filteredStatusesJson) : [];
+
+  // If no statuses are selected in the UI, default to the previously hardcoded list
+  if (filteredStatuses.length === 0) {
+    filteredStatuses = [
+      'In Progress',
+      'In Review',
+      'Done',
+      'In Dev',
+      'In Staging',
+    ];
+  }
+
+  var finalStatuses = allStatuses.filter(function(status) {
+    return filteredStatuses.includes(status);
   });
 
-  if (!filteredStatuses.length) {
+  if (!finalStatuses.length) {
     sheet.getRange('A1').setValue('No relevant status data found for the selected statuses.');
     return;
   }
 
   // Compute averages
   var headers = ['Status', 'Avg Days', 'Median Days', 'Total Days', 'Issue Count'];
-  var rows = filteredStatuses.map(function (status) {
+  var rows = finalStatuses.map(function (status) {
     var values = [];
     processed.forEach(function (p) {
       if (p.timeByStatus[status]) values.push(p.timeByStatus[status]);

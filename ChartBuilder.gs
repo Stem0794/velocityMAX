@@ -12,6 +12,7 @@ function buildAllCharts() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
   // Ensure data sheets exist
+  var velocitySheet = ss.getSheetByName('Weekly Velocity');
   var issuesSheet = ss.getSheetByName('Issues');
   var statusSheet = ss.getSheetByName('Status Breakdown');
   var burnupBurndownSheet = ss.getSheetByName('Burnup Burndown Data');

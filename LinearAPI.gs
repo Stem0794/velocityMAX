@@ -176,7 +176,7 @@ function fetchStatusHistories(apiKey, issues) {
     });
     // Small pause between batches to stay within rate limits
     if (i + BATCH_SIZE < issues.length) {
-      Utilities.sleep(200);
+      Utilities.sleep(1000);
     }
   }
   return issues;

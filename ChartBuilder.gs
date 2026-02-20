@@ -279,7 +279,7 @@ function addCycleTimeScatterChart_(dashboard, scatterSheet, startRow) {
 }
 
 /**
- * Status Breakdown – horizontal bar chart of avg/median hours per status.
+ * Status Breakdown – horizontal bar chart of avg/median days per status.
  */
 function addStatusBreakdownChart_(dashboard, srcSheet, startRow) {
   var numRows = srcSheet.getLastRow();
@@ -292,7 +292,7 @@ function addStatusBreakdownChart_(dashboard, srcSheet, startRow) {
     .setValue(
       'How to read: Each bar shows how long issues sit in a given workflow status. ' +
       'Purple = average across all issues, Green = median (less affected by outliers). ' +
-      'Long bars highlight bottleneck statuses where work gets stuck.'
+      'Long bars highlight bottleneck statuses where work gets stuck. Data is in days.'
     );
   dashboard
     .getRange('A' + (startRow + 1))
@@ -304,16 +304,16 @@ function addStatusBreakdownChart_(dashboard, srcSheet, startRow) {
     .newChart()
     .setChartType(Charts.ChartType.BAR)
     .addRange(srcSheet.getRange(1, 1, numRows, 1)) // Status names
-    .addRange(srcSheet.getRange(1, 2, numRows, 1)) // Avg hours
-    .addRange(srcSheet.getRange(1, 3, numRows, 1)) // Median hours
+    .addRange(srcSheet.getRange(1, 2, numRows, 1)) // Avg days
+    .addRange(srcSheet.getRange(1, 3, numRows, 1)) // Median days
     .setPosition(startRow + 2, 1, 0, 0)
-    .setOption('title', 'Average Time in Each Status')
+    .setOption('title', 'Average Time in Each Status (Days)')
     .setOption('titleTextStyle', { fontSize: 14, bold: true })
-    .setOption('hAxis', { title: 'Hours', textStyle: { fontSize: 11 } })
+    .setOption('hAxis', { title: 'Days', textStyle: { fontSize: 11 } })
     .setOption('vAxis', { title: 'Status', textStyle: { fontSize: 11 } })
     .setOption('series', {
-      0: { color: '#5e6ad2', labelInLegend: 'Avg Hours' },
-      1: { color: '#30a46c', labelInLegend: 'Median Hours' },
+      0: { color: '#5e6ad2', labelInLegend: 'Avg Days' },
+      1: { color: '#30a46c', labelInLegend: 'Median Days' },
     })
     .setOption('legend', { position: 'top', textStyle: { fontSize: 12 } })
     .setOption('width', 900)

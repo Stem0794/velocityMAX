@@ -98,14 +98,23 @@ function fetchIssuesForProject(apiKey, teamId, projectIds, startDate, endDate) {
       variables.projectIds = projectIds;
       filterClauseParts.push('project: { id: { in: $projectIds } }');
     }
+
+    var createdAtFilter = {};
+    var hasDateFilter = false;
     if (startDate) {
       variables.startDate = startDate;
-      filterClauseParts.push('createdAt: { gte: $startDate }');
+      createdAtFilter.gte = '$startDate';
+      hasDateFilter = true;
     }
     if (endDate) {
       variables.endDate = endDate;
-      filterClauseParts.push('createdAt: { lte: $endDate }');
+      createdAtFilter.lte = '$endDate';
+      hasDateFilter = true;
     }
+    if (hasDateFilter) {
+      filterClauseParts.push('createdAt: { gte: $startDate, lte: $endDate }'); // Corrected
+    }
+
 
     var filterClause = '';
     if (filterClauseParts.length > 0) {
@@ -114,8 +123,8 @@ function fetchIssuesForProject(apiKey, teamId, projectIds, startDate, endDate) {
 
     var queryVariables = '$teamId: String!, $first: Int!, $after: String';
     if (projectIds && projectIds.length > 0) queryVariables += ', $projectIds: [ID!]!';
-    if (startDate) queryVariables += ', $startDate: DateTime!';
-    if (endDate) queryVariables += ', $endDate: DateTime!';
+    if (startDate) queryVariables += ', $startDate: DateTimeOrDuration!'; // Corrected type
+    if (endDate) queryVariables += ', $endDate: DateTimeOrDuration!';     // Corrected type
 
     var query =
       'query(' + queryVariables + ') {' +

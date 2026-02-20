@@ -277,9 +277,27 @@ function writeStatusBreakdown(ss, processed) {
     return;
   }
 
+  // Filter for user-specified statuses
+  var allowedStatuses = [
+    'In Progress',
+    'In Review',
+    'Done',
+    'In Dev',
+    'In Staging',
+    // Add other statuses here if needed
+  ];
+  var filteredStatuses = allStatuses.filter(function(status) {
+    return allowedStatuses.includes(status);
+  });
+
+  if (!filteredStatuses.length) {
+    sheet.getRange('A1').setValue('No relevant status data found for the selected statuses.');
+    return;
+  }
+
   // Compute averages
   var headers = ['Status', 'Avg Hours', 'Median Hours', 'Total Hours', 'Issue Count'];
-  var rows = allStatuses.map(function (status) {
+  var rows = filteredStatuses.map(function (status) {
     var values = [];
     processed.forEach(function (p) {
       if (p.timeByStatus[status]) values.push(p.timeByStatus[status]);

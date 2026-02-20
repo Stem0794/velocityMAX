@@ -169,6 +169,8 @@ function showStatusPicker() {
 
 function onStatusesSelected(statusNames) {
   saveSetting_('filteredStatuses', JSON.stringify(statusNames));
+  // Re-import issues to apply the new status filter and rebuild charts
+  importIssues();
 }
 
 // --------------- Date Range Picker ---------------

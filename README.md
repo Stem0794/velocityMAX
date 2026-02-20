@@ -4,8 +4,8 @@ A Google Apps Script that imports your Linear issues and builds velocity dashboa
 
 ## Features
 
-- **Import issues** from Linear by team and project
-- **Track time in each status** (hours spent in Backlog, In Progress, In Review, Done, etc.)
+- **Import issues** from Linear by team and **multiple projects**
+- **Track time in each status** (hours spent in Backlog, In Progress, In Review, Done, etc.), with configurable status filtering
 - **Story points** and priority per ticket
 - **Cycle time** (started → completed) and **lead time** (created → completed)
 - **Weekly velocity chart** – points and tickets completed per week with trend line
@@ -43,7 +43,7 @@ Create the following files in the Apps Script editor (use **+** next to Files):
 1. Reload your Google Sheet — you'll see a **VelocityMAX** menu
 2. **VelocityMAX > Set API Key** — paste your Linear API key
 3. **VelocityMAX > Select Team** — pick your team
-4. **VelocityMAX > Select Project** (optional) — filter by project
+4. **VelocityMAX > Select Project** (optional) — select one or multiple projects
 5. **VelocityMAX > Import Issues** — fetches all issues and builds data sheets
 6. Use the chart menu items to generate visualizations
 
@@ -53,14 +53,14 @@ Create the following files in the Apps Script editor (use **+** next to Files):
 |-------|-------------|
 | **Issues** | Full issue table with points, status, cycle/lead time, hours per status |
 | **Weekly Velocity** | Points and tickets completed per ISO week + avg cycle time |
-| **Status Breakdown** | Average, median, total hours per status across all issues |
+| **Status Breakdown** | Average, median, total hours per status across all issues (filtered by selected statuses) |
 
 ## Charts
 
 - **Weekly Velocity** – combo chart (bars = points, line = ticket count) + trend line
 - **Cycle Time Scatter** – individual issue cycle times over time with trend
 - **Avg Cycle Time per Week** – line chart with trend
-- **Status Breakdown** – horizontal bar chart (avg vs median hours)
+- **Status Breakdown** – horizontal bar chart (avg vs median hours), configurable status filtering
 
 ## Notes
 

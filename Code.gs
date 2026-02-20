@@ -193,6 +193,8 @@ function showDateRangeDialog() {
 function onDateRangeSelected(startDate, endDate) {
   saveSetting_('startDate', startDate);
   saveSetting_('endDate', endDate);
+  // Re-import issues to apply the new date range filter and rebuild charts
+  importIssues();
 }
 
 // --------------- Shared picker HTML builder ---------------

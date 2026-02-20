@@ -62,7 +62,7 @@ function fetchProjects(apiKey, teamId) {
 
 function fetchAllStatuses(apiKey, teamId) {
   var query =
-    'query($teamId: String!) {' +
+    'query($teamId: ID!) {' +
     '  workflowStates(filter: { team: { id: { eq: $teamId } } }) {' +
     '    nodes {' +
     '      id' +

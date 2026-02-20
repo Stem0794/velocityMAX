@@ -56,7 +56,7 @@ function fetchProjects(apiKey, teamId) {
  * Fetches all issues for a team, optionally filtered by project.
  * Handles pagination via cursor.
  */
-function fetchIssuesForProject(apiKey, teamId, projectId) {
+function fetchIssuesForProject(apiKey, teamId, projectIds) {
   var allIssues = [];
   var hasMore = true;
   var cursor = null;
@@ -66,14 +66,14 @@ function fetchIssuesForProject(apiKey, teamId, projectId) {
     if (cursor) variables.after = cursor;
 
     var filterClause = '';
-    if (projectId) {
-      variables.projectId = projectId;
-      filterClause = ', filter: { project: { id: { eq: $projectId } } }';
+    if (projectIds && projectIds.length > 0) {
+      variables.projectIds = projectIds;
+      filterClause = ', filter: { project: { id: { in: $projectIds } } }';
     }
 
     var query =
       'query($teamId: String!, $first: Int!, $after: String' +
-      (projectId ? ', $projectId: ID!' : '') +
+      (projectIds && projectIds.length > 0 ? ', $projectIds: [ID!]!' : '') +
       ') {' +
       '  team(id: $teamId) {' +
       '    issues(first: $first, after: $after' +

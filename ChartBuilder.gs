@@ -39,7 +39,10 @@ function buildAllCharts() {
 
   // ---- Dashboard header ----
   var teamName = getSetting_('teamName') || '—';
-  var projectName = getSetting_('projectName') || 'All Projects';
+  var projectNamesJson = getSetting_('projectName');
+  var projectNames = projectNamesJson ? JSON.parse(projectNamesJson) : [];
+  var projectNameDisplay =
+    projectNames.length > 0 ? projectNames.join(', ') : 'All Projects';
   var timestamp = Utilities.formatDate(
     new Date(),
     Session.getScriptTimeZone(),
@@ -52,7 +55,7 @@ function buildAllCharts() {
     .getRange('A2')
     .setValue(
       'Team: ' + teamName +
-      '  |  Project: ' + projectName +
+      '  |  Project(s): ' + projectNameDisplay +
       '  |  Updated: ' + timestamp
     );
   dashboard.getRange('A2').setFontSize(10).setFontColor('#666666');

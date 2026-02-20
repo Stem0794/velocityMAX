@@ -134,27 +134,31 @@ function showProjectPicker() {
   SpreadsheetApp.getUi().showModalDialog(html, 'Select a Project');
 }
 
-function onProjectSelected(projectId, projectName) {
-  saveSetting_('projectId', projectId);
-  saveSetting_('projectName', projectName);
+function onProjectSelected(projectIds, projectNames) {
+  saveSetting_('projectId', JSON.stringify(projectIds));
+  saveSetting_('projectName', JSON.stringify(projectNames));
 }
 
 // --------------- Shared picker HTML builder ---------------
 
 function buildPickerHtml_(type, items) {
+  var isProjectPicker = type === 'project';
+  var teamId = getSetting_('teamId');
+  var selectedProjectsJson = isProjectPicker ? getSetting_('projectId') : null; // projectId is actually selectedProjectsJson
+  var selectedProjects = selectedProjectsJson ? JSON.parse(selectedProjectsJson) : [];
+
   var rows = items
     .map(function (item) {
       var escapedName = item.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      var isChecked = selectedProjects.some(function(p) { return p.id === item.id; }) ? 'checked' : '';
       return (
         '<tr>' +
-        '<td style="padding:6px 12px;">' +
-        '<button onclick="pick(\'' +
-        item.id +
-        "','" +
-        escapedName +
-        '\')" ' +
-        'style="cursor:pointer;padding:6px 16px;border:1px solid #5e6ad2;' +
-        'background:#5e6ad2;color:#fff;border-radius:4px;">Select</button>' +
+        '<td style="padding:6px 12px;width:30px;">' +
+        (isProjectPicker ?
+          '<input type="checkbox" class="project-checkbox" ' + isChecked + ' value="' + item.id + '" data-name="' + escapedName + '">' :
+          '<button onclick="pick(\'' + item.id + "','" + escapedName + '\')" ' +
+          'style="cursor:pointer;padding:6px 16px;border:1px solid #5e6ad2;' +
+          'background:#5e6ad2;color:#fff;border-radius:4px;">Select</button>') +
         '</td>' +
         '<td style="padding:6px 12px;">' +
         item.name +
@@ -164,21 +168,51 @@ function buildPickerHtml_(type, items) {
     })
     .join('');
 
-  var callbackFn =
-    type === 'team' ? 'onTeamSelected' : 'onProjectSelected';
+  var callbackFn = type === 'team' ? 'onTeamSelected' : 'onProjectSelected';
 
-  return (
-    '<style>body{font-family:sans-serif;} table{width:100%;border-collapse:collapse;} ' +
-    'tr:hover{background:#f5f5f5;}</style>' +
-    '<table>' +
-    rows +
-    '</table>' +
+  var header = isProjectPicker ?
+    '<h2>Select Projects</h2>' +
+    '<div style="margin-bottom: 10px;">' +
+    '<button onclick="selectAll()" style="margin-right: 10px;cursor:pointer;padding:6px 16px;border:1px solid #5e6ad2;' +
+    'background:#5e6ad2;color:#fff;border-radius:4px;">Select All</button>' +
+    '<button onclick="deselectAll()" style="cursor:pointer;padding:6px 16px;border:1px solid #5e6ad2;' +
+    'background:#5e6ad2;color:#fff;border-radius:4px;">Deselect All</button>' +
+    '<button onclick="saveSelection()" style="float:right;cursor:pointer;padding:6px 16px;border:1px solid #28a745;' +
+    'background:#28a745;color:#fff;border-radius:4px;">Save Selection</button>' +
+    '</div>' : '';
+
+  var script = isProjectPicker ?
+    '<script>' +
+    'function selectAll() { Array.from(document.querySelectorAll(".project-checkbox")).forEach(cb => cb.checked = true); }' +
+    'function deselectAll() { Array.from(document.querySelectorAll(".project-checkbox")).forEach(cb => cb.checked = false); }' +
+    'function saveSelection() {' +
+    'var selectedIds = [];' +
+    'var selectedNames = [];' +
+    'Array.from(document.querySelectorAll(".project-checkbox:checked")).forEach(function(cb){' +
+    'selectedIds.push(cb.value);' +
+    'selectedNames.push(cb.dataset.name);' +
+    '});' +
+    'google.script.run.withSuccessHandler(function(){google.script.host.close();}).' +
+    callbackFn +
+    '(selectedIds, selectedNames);' +
+    '}' +
+    '</script>' :
     '<script>' +
     'function pick(id,name){' +
     'google.script.run.withSuccessHandler(function(){google.script.host.close();}).' +
     callbackFn +
     '(id,name);}' +
-    '</script>'
+    '</script>';
+
+  return (
+    '<style>body{font-family:sans-serif;}' +
+    'table{width:100%;border-collapse:collapse;} ' +
+    'tr:hover{background:#f5f5f5;}</style>' +
+    header +
+    '<table>' +
+    rows +
+    '</table>' +
+    script
   );
 }
 
@@ -187,10 +221,18 @@ function buildPickerHtml_(type, items) {
 function importIssues() {
   var apiKey = getApiKey_();
   var teamId = getSetting_('teamId');
-  var projectId = getSetting_('projectId');
+  var projectIdsJson = getSetting_('projectId');
+  var projectIds = projectIdsJson ? JSON.parse(projectIdsJson) : [];
+
   if (!teamId) {
     SpreadsheetApp.getUi().alert(
       'Please select a team first (VelocityMAX > Select Team).'
+    );
+    return;
+  }
+  if (!projectIds || projectIds.length === 0) {
+    SpreadsheetApp.getUi().alert(
+      'Please select at least one project first (VelocityMAX > Select Project).'
     );
     return;
   }
@@ -205,9 +247,9 @@ function importIssues() {
   );
 
   // 1. Fetch raw issues
-  var issues = fetchIssuesForProject(apiKey, teamId, projectId);
+  var issues = fetchIssuesForProject(apiKey, teamId, projectIds);
   if (!issues.length) {
-    ui.alert('No issues found for the selected team/project.');
+    ui.alert('No issues found for the selected team/project(s).');
     return;
   }
 
@@ -277,10 +319,13 @@ function autoRefresh_() {
   var teamId = getSetting_('teamId');
   if (!apiKey || !teamId) return; // nothing configured yet
 
-  var projectId = getSetting_('projectId');
+  var projectIdsJson = getSetting_('projectId');
+  var projectIds = projectIdsJson ? JSON.parse(projectIdsJson) : [];
+  if (!projectIds || projectIds.length === 0) return; // no projects selected
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  var issues = fetchIssuesForProject(apiKey, teamId, projectId);
+  var issues = fetchIssuesForProject(apiKey, teamId, projectIds);
   if (!issues.length) return;
 
   var issuesWithHistory = fetchStatusHistories(apiKey, issues);

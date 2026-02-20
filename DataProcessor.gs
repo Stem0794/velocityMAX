@@ -62,10 +62,10 @@ function computeTimeByStatus_(issue) {
     }
 
     var end = new Date(entry.createdAt);
-    var hours = Math.max(0, (end - start) / (1000 * 60 * 60));
+    var days = Math.max(0, (end - start) / (1000 * 60 * 60 * 24));
 
     if (!result[statusName]) result[statusName] = 0;
-    result[statusName] += hours;
+    result[statusName] += days;
   }
 
   // Time in the current (last) state up to now or completedAt
@@ -78,9 +78,9 @@ function computeTimeByStatus_(issue) {
     ? new Date(issue.canceledAt)
     : new Date();
 
-  var hoursInCurrent = Math.max(0, (until - sinceLastTransition) / (1000 * 60 * 60));
+  var daysInCurrent = Math.max(0, (until - sinceLastTransition) / (1000 * 60 * 60 * 24));
   if (!result[currentStatus]) result[currentStatus] = 0;
-  result[currentStatus] += hoursInCurrent;
+  result[currentStatus] += daysInCurrent;
 
   // Round to 1 decimal
   Object.keys(result).forEach(function (k) {
@@ -150,7 +150,7 @@ function writeIssuesToSheet(ss, processed) {
     'Lead Time (days)',
   ];
   allStatuses.forEach(function (s) {
-    headers.push('Hours in: ' + s);
+    headers.push('Days in: ' + s);
   });
 
   // Data rows
@@ -260,7 +260,7 @@ function writeWeeklyVelocity(ss, processed) {
 }
 
 /**
- * Write a "Status Breakdown" sheet with average hours in each status.
+ * Write a "Status Breakdown" sheet with average days in each status.
  */
 function writeStatusBreakdown(ss, processed) {
   var sheetName = 'Status Breakdown';
@@ -296,7 +296,7 @@ function writeStatusBreakdown(ss, processed) {
   }
 
   // Compute averages
-  var headers = ['Status', 'Avg Hours', 'Median Hours', 'Total Hours', 'Issue Count'];
+  var headers = ['Status', 'Avg Days', 'Median Days', 'Total Days', 'Issue Count'];
   var rows = filteredStatuses.map(function (status) {
     var values = [];
     processed.forEach(function (p) {
@@ -317,9 +317,9 @@ function writeStatusBreakdown(ss, processed) {
 
   // Number formatting for numeric columns
   if (rows.length) {
-    sheet.getRange(2, 2, rows.length, 1).setNumberFormat('0.0');  // Avg Hours
-    sheet.getRange(2, 3, rows.length, 1).setNumberFormat('0.0');  // Median Hours
-    sheet.getRange(2, 4, rows.length, 1).setNumberFormat('#,##0.0'); // Total Hours
+    sheet.getRange(2, 2, rows.length, 1).setNumberFormat('0.0');  // Avg Days
+    sheet.getRange(2, 3, rows.length, 1).setNumberFormat('0.0');  // Median Days
+    sheet.getRange(2, 4, rows.length, 1).setNumberFormat('#,##0.0'); // Total Days
     sheet.getRange(2, 5, rows.length, 1).setNumberFormat('#,##0');   // Issue Count
   }
 }

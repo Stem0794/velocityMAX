@@ -16,12 +16,12 @@ function onOpen() {
     .addItem('Select Team', 'showTeamPicker')
     .addItem('Select Project', 'showProjectPicker')
     .addSeparator()
-    .addItem('Import Issues', 'importIssues')
+    .addItem('Import Issues & Build Dashboard', 'importIssues')
     .addItem('Refresh Data', 'refreshAllData')
+    .addItem('Rebuild Dashboard Charts', 'buildAllCharts')
     .addSeparator()
-    .addItem('Build Velocity Chart', 'buildVelocityChart')
-    .addItem('Build Cycle-Time Chart', 'buildCycleTimeChart')
-    .addItem('Build Status Breakdown Chart', 'buildStatusBreakdownChart')
+    .addItem('Enable Auto-Refresh (hourly)', 'enableAutoRefresh')
+    .addItem('Disable Auto-Refresh', 'disableAutoRefresh')
     .addToUi();
 }
 
@@ -222,13 +222,84 @@ function importIssues() {
   writeWeeklyVelocity(ss, processed);
   writeStatusBreakdown(ss, processed);
 
+  // 5. Auto-build Dashboard with all charts
+  buildAllCharts();
+
   ui.alert(
     'Done! ' +
       processed.length +
-      ' issues imported. Use the VelocityMAX menu to build charts.'
+      ' issues imported and Dashboard updated.'
   );
 }
 
 function refreshAllData() {
   importIssues();
+}
+
+// --------------- Auto-Refresh Trigger ---------------
+
+/**
+ * Creates an hourly time-driven trigger to re-import data from Linear.
+ * Only one trigger is created; duplicates are prevented.
+ */
+function enableAutoRefresh() {
+  // Remove any existing VelocityMAX triggers first
+  removeAutoRefreshTriggers_();
+
+  ScriptApp.newTrigger('autoRefresh_')
+    .timeBased()
+    .everyHours(1)
+    .create();
+
+  SpreadsheetApp.getUi().alert(
+    'Auto-refresh enabled. Data will sync from Linear every hour.'
+  );
+}
+
+/**
+ * Removes the hourly auto-refresh trigger.
+ */
+function disableAutoRefresh() {
+  var removed = removeAutoRefreshTriggers_();
+  SpreadsheetApp.getUi().alert(
+    removed
+      ? 'Auto-refresh disabled.'
+      : 'No auto-refresh trigger was active.'
+  );
+}
+
+/**
+ * The function invoked by the time-driven trigger.
+ * Runs without UI prompts so it works unattended.
+ */
+function autoRefresh_() {
+  var apiKey = getSetting_('linearApiKey');
+  var teamId = getSetting_('teamId');
+  if (!apiKey || !teamId) return; // nothing configured yet
+
+  var projectId = getSetting_('projectId');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  var issues = fetchIssuesForProject(apiKey, teamId, projectId);
+  if (!issues.length) return;
+
+  var issuesWithHistory = fetchStatusHistories(apiKey, issues);
+  var processed = processIssues(issuesWithHistory);
+
+  writeIssuesToSheet(ss, processed);
+  writeWeeklyVelocity(ss, processed);
+  writeStatusBreakdown(ss, processed);
+  buildAllCharts();
+}
+
+function removeAutoRefreshTriggers_() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var removed = false;
+  triggers.forEach(function (t) {
+    if (t.getHandlerFunction() === 'autoRefresh_') {
+      ScriptApp.deleteTrigger(t);
+      removed = true;
+    }
+  });
+  return removed;
 }

@@ -1,145 +1,343 @@
 // ============================================================
-// ChartBuilder.gs – Create Charts from the velocity data
+// ChartBuilder.gs – Create all charts on a single Dashboard sheet
 // ============================================================
 
+var DASHBOARD_SHEET = 'Dashboard';
+
 /**
- * Builds a velocity chart (points + tickets completed per week)
- * embedded in the "Weekly Velocity" sheet.
+ * Master function: builds every chart on the Dashboard sheet.
+ * Called automatically after data import.
  */
-function buildVelocityChart() {
+function buildAllCharts() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('Weekly Velocity');
-  if (!sheet) {
+
+  // Ensure data sheets exist
+  var velocitySheet = ss.getSheetByName('Weekly Velocity');
+  var issuesSheet = ss.getSheetByName('Issues');
+  var statusSheet = ss.getSheetByName('Status Breakdown');
+
+  if (!velocitySheet && !issuesSheet && !statusSheet) {
     SpreadsheetApp.getUi().alert(
-      'No "Weekly Velocity" sheet found. Import issues first.'
+      'No data sheets found. Import issues first (VelocityMAX > Import Issues).'
     );
     return;
   }
 
-  var data = sheet.getDataRange().getValues();
-  if (data.length < 2) {
-    SpreadsheetApp.getUi().alert('No data to chart.');
-    return;
+  // Prepare scatter data helper sheet (needed before building charts)
+  if (issuesSheet) {
+    prepareScatterData_(ss, issuesSheet);
   }
 
-  // Remove old charts on this sheet
-  removeChartsFromSheet_(sheet);
+  // Create / clear the Dashboard sheet
+  var dashboard = ss.getSheetByName(DASHBOARD_SHEET);
+  if (dashboard) {
+    removeChartsFromSheet_(dashboard);
+    dashboard.clear();
+  } else {
+    dashboard = ss.insertSheet(DASHBOARD_SHEET, 0); // first tab
+  }
 
-  var numRows = data.length;
+  // ---- Dashboard header ----
+  var teamName = getSetting_('teamName') || '—';
+  var projectName = getSetting_('projectName') || 'All Projects';
+  var timestamp = Utilities.formatDate(
+    new Date(),
+    Session.getScriptTimeZone(),
+    'yyyy-MM-dd HH:mm'
+  );
 
-  // Combo chart: bars for points, line for ticket count
-  var chart = sheet
+  dashboard.getRange('A1').setValue('VelocityMAX Dashboard');
+  dashboard.getRange('A1').setFontSize(18).setFontWeight('bold');
+  dashboard
+    .getRange('A2')
+    .setValue('Team: ' + teamName + '  |  Project: ' + projectName + '  |  Updated: ' + timestamp);
+  dashboard.getRange('A2').setFontSize(10).setFontColor('#666666');
+  dashboard.setColumnWidth(1, 250);
+
+  // ---- Build charts ----
+  // Each chart is positioned on the Dashboard with clear vertical spacing.
+  // Row positions keep charts from overlapping (~25 rows per chart).
+  var chartRow = 4;
+
+  // 1. Weekly Velocity (combo)
+  if (velocitySheet && velocitySheet.getLastRow() > 1) {
+    chartRow = addVelocityChart_(dashboard, velocitySheet, chartRow);
+  }
+
+  // 2. Points Velocity Trend (line + trendline)
+  if (velocitySheet && velocitySheet.getLastRow() > 1) {
+    chartRow = addVelocityTrendChart_(dashboard, velocitySheet, chartRow);
+  }
+
+  // 3. Average Cycle Time per Week (line + trendline)
+  if (velocitySheet && velocitySheet.getLastRow() > 1) {
+    chartRow = addCycleTimeWeeklyChart_(dashboard, velocitySheet, chartRow);
+  }
+
+  // 4. Issue Cycle Times (scatter)
+  var scatterSheet = ss.getSheetByName('_CycleTimeScatter');
+  if (scatterSheet && scatterSheet.getLastRow() > 1) {
+    chartRow = addCycleTimeScatterChart_(dashboard, scatterSheet, chartRow);
+  }
+
+  // 5. Status Breakdown (bar)
+  if (statusSheet && statusSheet.getLastRow() > 1) {
+    chartRow = addStatusBreakdownChart_(dashboard, statusSheet, chartRow);
+  }
+
+  // Move Dashboard to first position
+  ss.setActiveSheet(dashboard);
+  ss.moveActiveSheet(1);
+}
+
+// ==================== Individual chart builders ====================
+
+/**
+ * Weekly Velocity – combo chart (bars for points, line for tickets).
+ */
+function addVelocityChart_(dashboard, srcSheet, startRow) {
+  var numRows = srcSheet.getLastRow();
+
+  // Section title
+  dashboard.getRange('A' + startRow).setValue('Weekly Velocity');
+  dashboard
+    .getRange('A' + startRow)
+    .setFontSize(13)
+    .setFontWeight('bold');
+
+  var chart = dashboard
     .newChart()
     .setChartType(Charts.ChartType.COMBO)
-    .addRange(sheet.getRange(1, 1, numRows, 1)) // Week labels
-    .addRange(sheet.getRange(1, 2, numRows, 1)) // Points
-    .addRange(sheet.getRange(1, 3, numRows, 1)) // Ticket count
+    .addRange(srcSheet.getRange(1, 1, numRows, 1)) // Week labels
+    .addRange(srcSheet.getRange(1, 2, numRows, 1)) // Points
+    .addRange(srcSheet.getRange(1, 3, numRows, 1)) // Ticket count
     .setMergeStrategy(Charts.ChartMergeStrategy.MERGE_COLUMNS)
-    .setPosition(2, 6, 0, 0)
+    .setPosition(startRow + 1, 1, 0, 0)
     .setOption('title', 'Weekly Velocity')
-    .setOption('hAxis.title', 'Week')
+    .setOption('titleTextStyle', { fontSize: 14, bold: true })
+    .setOption('hAxis', { title: 'Week', textStyle: { fontSize: 11 } })
     .setOption('vAxes', {
-      0: { title: 'Points Completed' },
-      1: { title: 'Tickets Completed' },
+      0: { title: 'Points Completed', textStyle: { fontSize: 11 } },
+      1: { title: 'Tickets Completed', textStyle: { fontSize: 11 } },
     })
     .setOption('series', {
       0: { type: 'bars', targetAxisIndex: 0, color: '#5e6ad2' },
-      1: { type: 'line', targetAxisIndex: 1, color: '#e5484d' },
+      1: { type: 'line', targetAxisIndex: 1, color: '#e5484d', lineWidth: 3 },
     })
-    .setOption('legend', { position: 'top' })
-    .setOption('width', 800)
+    .setOption('legend', {
+      position: 'top',
+      textStyle: { fontSize: 12 },
+    })
+    .setOption('width', 900)
     .setOption('height', 450)
     .build();
 
-  sheet.insertChart(chart);
+  dashboard.insertChart(chart);
+  return startRow + 27; // next chart position
+}
 
-  // Also add a trend line chart for points
-  var trendChart = sheet
+/**
+ * Points Velocity Trend – line chart with linear trendline.
+ */
+function addVelocityTrendChart_(dashboard, srcSheet, startRow) {
+  var numRows = srcSheet.getLastRow();
+
+  dashboard.getRange('A' + startRow).setValue('Velocity Trend');
+  dashboard
+    .getRange('A' + startRow)
+    .setFontSize(13)
+    .setFontWeight('bold');
+
+  var chart = dashboard
     .newChart()
     .setChartType(Charts.ChartType.LINE)
-    .addRange(sheet.getRange(1, 1, numRows, 1)) // Week
-    .addRange(sheet.getRange(1, 2, numRows, 1)) // Points
-    .setPosition(28, 6, 0, 0)
+    .addRange(srcSheet.getRange(1, 1, numRows, 1)) // Week
+    .addRange(srcSheet.getRange(1, 2, numRows, 1)) // Points
+    .setPosition(startRow + 1, 1, 0, 0)
     .setOption('title', 'Points Velocity Trend')
-    .setOption('hAxis.title', 'Week')
-    .setOption('vAxis.title', 'Points')
-    .setOption('trendlines', { 0: { type: 'linear', color: '#e5484d', lineWidth: 2, opacity: 0.6 } })
-    .setOption('series', { 0: { color: '#5e6ad2' } })
-    .setOption('legend', { position: 'none' })
-    .setOption('width', 800)
+    .setOption('titleTextStyle', { fontSize: 14, bold: true })
+    .setOption('hAxis', { title: 'Week', textStyle: { fontSize: 11 } })
+    .setOption('vAxis', { title: 'Points Completed', textStyle: { fontSize: 11 } })
+    .setOption('series', {
+      0: { color: '#5e6ad2', lineWidth: 3 },
+    })
+    .setOption('trendlines', {
+      0: {
+        type: 'linear',
+        color: '#e5484d',
+        lineWidth: 2,
+        opacity: 0.6,
+        labelInLegend: 'Trend',
+        showR2: true,
+        visibleInLegend: true,
+      },
+    })
+    .setOption('legend', {
+      position: 'top',
+      textStyle: { fontSize: 12 },
+    })
+    .setOption('width', 900)
     .setOption('height', 400)
     .build();
 
-  sheet.insertChart(trendChart);
-
-  SpreadsheetApp.getUi().alert('Velocity charts created on the "Weekly Velocity" sheet.');
+  dashboard.insertChart(chart);
+  return startRow + 25;
 }
 
 /**
- * Builds a cycle-time chart from the "Weekly Velocity" sheet.
+ * Average Cycle Time per Week – line chart with trendline.
  */
-function buildCycleTimeChart() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('Weekly Velocity');
-  if (!sheet) {
-    SpreadsheetApp.getUi().alert(
-      'No "Weekly Velocity" sheet found. Import issues first.'
-    );
-    return;
-  }
+function addCycleTimeWeeklyChart_(dashboard, srcSheet, startRow) {
+  var numRows = srcSheet.getLastRow();
 
-  var data = sheet.getDataRange().getValues();
-  if (data.length < 2) {
-    SpreadsheetApp.getUi().alert('No data to chart.');
-    return;
-  }
+  dashboard.getRange('A' + startRow).setValue('Cycle Time Trend');
+  dashboard
+    .getRange('A' + startRow)
+    .setFontSize(13)
+    .setFontWeight('bold');
 
-  var numRows = data.length;
-
-  // Also build a scatter plot from the Issues sheet for individual cycle times
-  var issuesSheet = ss.getSheetByName('Issues');
-  if (issuesSheet) {
-    buildCycleTimeScatter_(ss, issuesSheet);
-  }
-
-  // Line chart of avg cycle time per week
-  var chart = sheet
+  var chart = dashboard
     .newChart()
     .setChartType(Charts.ChartType.LINE)
-    .addRange(sheet.getRange(1, 1, numRows, 1)) // Week
-    .addRange(sheet.getRange(1, 4, numRows, 1)) // Avg cycle time
-    .setPosition(54, 6, 0, 0)
+    .addRange(srcSheet.getRange(1, 1, numRows, 1)) // Week
+    .addRange(srcSheet.getRange(1, 4, numRows, 1)) // Avg cycle time
+    .setPosition(startRow + 1, 1, 0, 0)
     .setOption('title', 'Average Cycle Time per Week')
-    .setOption('hAxis.title', 'Week')
-    .setOption('vAxis.title', 'Days')
-    .setOption('series', { 0: { color: '#30a46c' } })
-    .setOption('trendlines', { 0: { type: 'linear', color: '#e5484d', lineWidth: 2, opacity: 0.5 } })
-    .setOption('legend', { position: 'none' })
-    .setOption('width', 800)
+    .setOption('titleTextStyle', { fontSize: 14, bold: true })
+    .setOption('hAxis', { title: 'Week', textStyle: { fontSize: 11 } })
+    .setOption('vAxis', { title: 'Cycle Time (days)', textStyle: { fontSize: 11 } })
+    .setOption('series', {
+      0: { color: '#30a46c', lineWidth: 3, labelInLegend: 'Avg Cycle Time' },
+    })
+    .setOption('trendlines', {
+      0: {
+        type: 'linear',
+        color: '#e5484d',
+        lineWidth: 2,
+        opacity: 0.5,
+        labelInLegend: 'Trend',
+        visibleInLegend: true,
+      },
+    })
+    .setOption('legend', {
+      position: 'top',
+      textStyle: { fontSize: 12 },
+    })
+    .setOption('width', 900)
     .setOption('height', 400)
     .build();
 
-  sheet.insertChart(chart);
-
-  SpreadsheetApp.getUi().alert('Cycle time charts created.');
+  dashboard.insertChart(chart);
+  return startRow + 25;
 }
 
 /**
- * Scatter plot of individual issue cycle times over time.
+ * Issue Cycle Times – scatter plot of individual issues over time.
  */
-function buildCycleTimeScatter_(ss, issuesSheet) {
+function addCycleTimeScatterChart_(dashboard, scatterSheet, startRow) {
+  var numRows = scatterSheet.getLastRow();
+
+  dashboard.getRange('A' + startRow).setValue('Individual Issue Cycle Times');
+  dashboard
+    .getRange('A' + startRow)
+    .setFontSize(13)
+    .setFontWeight('bold');
+
+  var chart = dashboard
+    .newChart()
+    .setChartType(Charts.ChartType.SCATTER)
+    .addRange(scatterSheet.getRange(1, 1, numRows, 1)) // Completed date
+    .addRange(scatterSheet.getRange(1, 2, numRows, 1)) // Cycle time
+    .setPosition(startRow + 1, 1, 0, 0)
+    .setOption('title', 'Issue Cycle Times')
+    .setOption('titleTextStyle', { fontSize: 14, bold: true })
+    .setOption('hAxis', { title: 'Completion Date', textStyle: { fontSize: 11 } })
+    .setOption('vAxis', { title: 'Cycle Time (days)', textStyle: { fontSize: 11 } })
+    .setOption('series', {
+      0: {
+        color: '#5e6ad2',
+        pointSize: 7,
+        pointShape: 'circle',
+        labelInLegend: 'Issues',
+      },
+    })
+    .setOption('trendlines', {
+      0: {
+        type: 'linear',
+        color: '#e5484d',
+        lineWidth: 2,
+        opacity: 0.5,
+        labelInLegend: 'Trend',
+        visibleInLegend: true,
+      },
+    })
+    .setOption('legend', {
+      position: 'top',
+      textStyle: { fontSize: 12 },
+    })
+    .setOption('width', 900)
+    .setOption('height', 400)
+    .build();
+
+  dashboard.insertChart(chart);
+  return startRow + 25;
+}
+
+/**
+ * Status Breakdown – horizontal bar chart of avg/median hours per status.
+ */
+function addStatusBreakdownChart_(dashboard, srcSheet, startRow) {
+  var numRows = srcSheet.getLastRow();
+
+  dashboard.getRange('A' + startRow).setValue('Time Spent in Each Status');
+  dashboard
+    .getRange('A' + startRow)
+    .setFontSize(13)
+    .setFontWeight('bold');
+
+  var chart = dashboard
+    .newChart()
+    .setChartType(Charts.ChartType.BAR)
+    .addRange(srcSheet.getRange(1, 1, numRows, 1)) // Status names
+    .addRange(srcSheet.getRange(1, 2, numRows, 1)) // Avg hours
+    .addRange(srcSheet.getRange(1, 3, numRows, 1)) // Median hours
+    .setPosition(startRow + 1, 1, 0, 0)
+    .setOption('title', 'Average Time in Each Status')
+    .setOption('titleTextStyle', { fontSize: 14, bold: true })
+    .setOption('hAxis', { title: 'Hours', textStyle: { fontSize: 11 } })
+    .setOption('vAxis', { title: 'Status', textStyle: { fontSize: 11 } })
+    .setOption('series', {
+      0: { color: '#5e6ad2', labelInLegend: 'Avg Hours' },
+      1: { color: '#30a46c', labelInLegend: 'Median Hours' },
+    })
+    .setOption('legend', {
+      position: 'top',
+      textStyle: { fontSize: 12 },
+    })
+    .setOption('width', 900)
+    .setOption('height', 400)
+    .build();
+
+  dashboard.insertChart(chart);
+  return startRow + 25;
+}
+
+// ==================== Scatter data preparation ====================
+
+/**
+ * Prepares the hidden _CycleTimeScatter sheet from Issues data.
+ */
+function prepareScatterData_(ss, issuesSheet) {
   var data = issuesSheet.getDataRange().getValues();
   if (data.length < 2) return;
 
-  // Find column indices
   var headers = data[0];
-  var completedCol = headers.indexOf('Completed') + 1;
-  var cycleTimeCol = headers.indexOf('Cycle Time (days)') + 1;
-  var pointsCol = headers.indexOf('Points') + 1;
+  var completedCol = headers.indexOf('Completed');
+  var cycleTimeCol = headers.indexOf('Cycle Time (days)');
+  var pointsCol = headers.indexOf('Points');
 
-  if (!completedCol || !cycleTimeCol) return;
+  if (completedCol < 0 || cycleTimeCol < 0) return;
 
-  // Create a helper sheet for scatter data
   var scatterSheetName = '_CycleTimeScatter';
   var scatterSheet = ss.getSheetByName(scatterSheetName);
   if (scatterSheet) {
@@ -149,13 +347,12 @@ function buildCycleTimeScatter_(ss, issuesSheet) {
     scatterSheet.hideSheet();
   }
 
-  // Write completed date + cycle time pairs
   var scatterHeaders = ['Completed Date', 'Cycle Time (days)', 'Points'];
   var scatterRows = [];
   for (var i = 1; i < data.length; i++) {
-    var completed = data[i][completedCol - 1];
-    var cycleTime = data[i][cycleTimeCol - 1];
-    var points = data[i][pointsCol - 1];
+    var completed = data[i][completedCol];
+    var cycleTime = data[i][cycleTimeCol];
+    var points = pointsCol >= 0 ? data[i][pointsCol] : 1;
     if (completed && cycleTime) {
       scatterRows.push([new Date(completed), cycleTime, points || 1]);
     }
@@ -167,83 +364,23 @@ function buildCycleTimeScatter_(ss, issuesSheet) {
   scatterSheet
     .getRange(1, 1, allData.length, allData[0].length)
     .setValues(allData);
-
-  var numRows = allData.length;
-
-  var chart = issuesSheet
-    .newChart()
-    .setChartType(Charts.ChartType.SCATTER)
-    .addRange(scatterSheet.getRange(1, 1, numRows, 1)) // Date
-    .addRange(scatterSheet.getRange(1, 2, numRows, 1)) // Cycle time
-    .setPosition(2, 18, 0, 0)
-    .setOption('title', 'Issue Cycle Times')
-    .setOption('hAxis.title', 'Completion Date')
-    .setOption('vAxis.title', 'Cycle Time (days)')
-    .setOption('series', {
-      0: { color: '#5e6ad2', pointSize: 6, pointShape: 'circle' },
-    })
-    .setOption('trendlines', {
-      0: { type: 'linear', color: '#e5484d', lineWidth: 2, opacity: 0.5 },
-    })
-    .setOption('legend', { position: 'none' })
-    .setOption('width', 800)
-    .setOption('height', 400)
-    .build();
-
-  issuesSheet.insertChart(chart);
 }
 
-/**
- * Builds a horizontal bar chart showing average hours spent in each status.
- */
+// ==================== Legacy wrappers (menu still works) ====================
+
+function buildVelocityChart() {
+  buildAllCharts();
+}
+
+function buildCycleTimeChart() {
+  buildAllCharts();
+}
+
 function buildStatusBreakdownChart() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('Status Breakdown');
-  if (!sheet) {
-    SpreadsheetApp.getUi().alert(
-      'No "Status Breakdown" sheet found. Import issues first.'
-    );
-    return;
-  }
-
-  var data = sheet.getDataRange().getValues();
-  if (data.length < 2) {
-    SpreadsheetApp.getUi().alert('No data to chart.');
-    return;
-  }
-
-  removeChartsFromSheet_(sheet);
-
-  var numRows = data.length;
-
-  // Bar chart: status name vs avg hours
-  var chart = sheet
-    .newChart()
-    .setChartType(Charts.ChartType.BAR)
-    .addRange(sheet.getRange(1, 1, numRows, 1)) // Status names
-    .addRange(sheet.getRange(1, 2, numRows, 1)) // Avg hours
-    .addRange(sheet.getRange(1, 3, numRows, 1)) // Median hours
-    .setPosition(2, 7, 0, 0)
-    .setOption('title', 'Average Time in Each Status')
-    .setOption('hAxis.title', 'Hours')
-    .setOption('vAxis.title', 'Status')
-    .setOption('series', {
-      0: { color: '#5e6ad2' },
-      1: { color: '#30a46c' },
-    })
-    .setOption('legend', { position: 'top' })
-    .setOption('width', 700)
-    .setOption('height', 400)
-    .build();
-
-  sheet.insertChart(chart);
-
-  SpreadsheetApp.getUi().alert(
-    'Status breakdown chart created on the "Status Breakdown" sheet.'
-  );
+  buildAllCharts();
 }
 
-// --------------- Helpers ---------------
+// ==================== Helpers ====================
 
 function removeChartsFromSheet_(sheet) {
   var charts = sheet.getCharts();

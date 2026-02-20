@@ -33,7 +33,6 @@ Create the following files in the Apps Script editor (use **+** next to Files):
 | `LinearAPI.gs` | Copy from `LinearAPI.gs` |
 | `DataProcessor.gs` | Copy from `DataProcessor.gs` |
 | `ChartBuilder.gs` | Copy from `ChartBuilder.gs` |
-| `appsscript.json` | Copy from `appsscript.json` (enable "Show manifest file" in Project Settings) |
 
 ### 3. Get a Linear API Key
 

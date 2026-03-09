@@ -76,3 +76,61 @@ Create the following files in the Apps Script editor (use **+** next to Files):
 - Status history is fetched per-issue to compute time-in-status accurately
 - Rate limiting: batches of 10 issues with 200ms pauses between batches
 - All settings (API key, team, project, statuses, date range) are stored in a hidden `_Settings` sheet
+
+# User Guide
+
+Welcome to VelocityMAX! This guide will help you use the powerful features of this tool to track your Linear project velocity directly within Google Sheets.
+
+## Getting Started
+
+After the VelocityMAX script has been set up in your Google Sheet, you'll find a new menu item called **VelocityMAX**. This menu is your control center for the entire tool.
+
+Here’s how to get started:
+
+1.  **Set API Key**: Before you can import any data, you need to connect VelocityMAX to your Linear account.
+    *   Go to **VelocityMAX > Set API Key**.
+    *   A prompt will appear asking for your Linear API key.
+    *   You can generate a new key in your **Linear settings under "API"**.
+    *   Paste the key and click "OK".
+
+2.  **Select Your Team**: Choose the Linear team you want to analyze.
+    *   Go to **VelocityMAX > Select Team**.
+    *   A sidebar will appear with a list of your teams. Select one.
+
+3.  **Select Projects (Optional)**: By default, VelocityMAX will import issues from all projects within the selected team. If you want to focus on specific projects:
+    *   Go to **VelocityMAX > Select Project**.
+    *   Choose one or more projects from the sidebar.
+
+4.  **Import Your Issues**: Once configured, you can import your issues.
+    *   Go to **VelocityMAX > Import Issues**.
+    *   The script will fetch all the issues from your selected team and projects. This may take a few moments.
+
+## Understanding the Data
+
+VelocityMAX organizes your data into several sheets:
+
+*   **Issues**: This is the raw data for all your imported issues. It includes details like story points, current status, and cycle/lead times.
+*   **Weekly Velocity**: This sheet summarizes how many story points and tickets were completed each week.
+*   **Status Breakdown**: Shows how long, on average, issues spend in each status (e.g., "In Progress", "In Review").
+*   **Burnup Burndown Data**: This sheet contains the data used to generate the burn-up and burn-down charts, showing progress over time.
+
+## Visualizing Your Velocity
+
+VelocityMAX also creates several charts to help you visualize your team's performance:
+
+*   **Weekly Velocity Chart**: A bar chart showing the number of story points and tickets completed each week. This helps you understand your team's weekly output.
+*   **Cycle Time Scatter Chart**: This scatter plot shows the cycle time (the time from when an issue is started to when it's completed) for individual issues. It's useful for spotting outliers.
+*   **Average Cycle Time Chart**: A line chart showing the average cycle time per week. This helps you track trends in how quickly your team is completing work.
+*   **Status Breakdown Chart**: A bar chart that shows the average and median time issues spend in each status. This can help you identify bottlenecks in your workflow.
+*   **Burn-up and Burn-down Charts**: These charts visualize your project's progress over time, showing how much work is remaining and how much has been completed.
+
+## Advanced Configuration
+
+You can further customize your reports using these menu options:
+
+*   **VelocityMAX > Select Statuses for Breakdown**: Choose which statuses to include in the "Status Breakdown" chart. This is useful for focusing on specific parts of your workflow.
+*   **VelocityMAX > Set Date Range Filter**: Filter the imported issues by a specific date range (e.g., only issues created in the last quarter).
+
+## Troubleshooting
+
+If you encounter any errors, check the **_ErrorLog** sheet. This sheet logs any problems the script runs into, which can help with debugging.
